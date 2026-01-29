@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>学習管理ポモドーロ | 集中力を可視化</title>
+    <meta name="description" content="学習時間と集中度を記録・可視化するポモドーロタイマー。オフライン対応PWA。">
+    <meta name="theme-color" content="#3b82f6">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+    <!-- PWA -->
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon.png">
+    <link rel="icon" href="icon.png">
+
+    <!-- Styles & Fonts -->
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- Firebase SDK（オプション） -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+</head>
+
+<body>
+    <div class="app" id="app" data-theme="light">
+        <!-- オンラインステータス -->
+        <div class="online-status" id="onlineStatus" title="オンライン">
+            <span class="status-dot"></span>
+        </div>
+
+        <!-- ヘッダー -->
+        <header class="header">
+            <h1>📚 学習管理ポモドーロ</h1>
+            <p class="subtitle">集中力を可視化して効率的に学習</p>
+            <button class="settings-toggle" id="settingsToggle" title="設定">⚙️</button>
+        </header>
+
+        <!-- モード切替タブ -->
+        <div class="mode-tabs">
+            <button class="mode-tab active" data-mode="pomodoro">🍅 ポモドーロ</button>
+            <button class="mode-tab" data-mode="mockExam">📝 模試モード</button>
+        </div>
+
+        <!-- タイマーセクション -->
+        <main class="main">
+            <div class="timer-container">
+                <!-- セクション選択 -->
+                <div class="section-selector">
+                    <label for="currentSection">📖 学習セクション</label>
+                    <select id="currentSection" class="section-select">
+                        <option value="">セクションを選択...</option>
+                    </select>
+                </div>
+
+                <!-- 模試モード設定 -->
+                <div class="mock-exam-settings" id="mockExamSettings" style="display: none;">
+                    <label for="mockExamDuration">計測時間（分）</label>
+                    <input type="number" id="mockExamDuration" value="120" min="1" max="300" class="mock-exam-input">
+                </div>
+
+                <!-- プログレスリング -->
+                <div class="progress-ring">
+                    <svg class="progress-svg" viewBox="0 0 200 200">
+                        <circle class="progress-bg" cx="100" cy="100" r="90" />
+                        <circle class="progress-bar" cx="100" cy="100" r="90" id="progressBar" />
+                    </svg>
+                    <div class="timer-display">
+                        <span class="time" id="timeDisplay">25:00</span>
+                        <span class="mode" id="modeDisplay">作業モード</span>
+                    </div>
+                </div>
+
+                <!-- 時間調整ボタン -->
+                <div class="time-adjust">
+                    <button class="adjust-btn" id="subtractTimeBtn">−5分</button>
+                    <button class="adjust-btn" id="addTimeBtn">+5分</button>
+                </div>
+
+                <!-- コントロールボタン -->
+                <div class="controls">
+                    <button class="btn btn-primary" id="startBtn">
+                        <span class="btn-icon">▶</span>
+                        <span>スタート</span>
+                    </button>
+                    <button class="btn btn-secondary" id="pauseBtn" disabled>
+                        <span class="btn-icon">⏸</span>
+                        <span>一時停止</span>
+                    </button>
+                    <button class="btn btn-tertiary" id="resetBtn">
+                        <span class="btn-icon">↺</span>
+                        <span>リセット</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 統計カード -->
+            <div class="stats">
+                <div class="stat-card">
+                    <span class="stat-value" id="sessionCount">0</span>
+                    <span class="stat-label">完了セッション</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-value" id="totalTime">0分</span>
+                    <span class="stat-label">本日の作業時間</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-value" id="continuousTime">0分</span>
+                    <span class="stat-label">連続作業時間</span>
+                </div>
+            </div>
+
+            <!-- 設定パネル -->
+            <div class="settings" id="pomodoroSettings">
+                <h3 class="settings-title">⏱️ タイマー設定</h3>
+                <div class="settings-grid">
+                    <div class="setting-item">
+                        <label for="workDuration">作業時間（分）</label>
+                        <input type="number" id="workDuration" value="25" min="1" max="60">
+                    </div>
+                    <div class="setting-item">
+                        <label for="breakDuration">休憩時間（分）</label>
+                        <input type="number" id="breakDuration" value="5" min="1" max="30">
+                    </div>
+                    <div class="setting-item">
+                        <label for="longBreakDuration">長休憩時間（分）</label>
+                        <input type="number" id="longBreakDuration" value="15" min="1" max="60">
+                    </div>
+                </div>
+            </div>
+
+            <!-- グラフセクション -->
+            <div class="chart-section">
+                <div class="chart-header">
+                    <h3 class="chart-title">📊 学習記録</h3>
+                    <div class="period-filter">
+                        <button class="filter-btn active" data-period="today">今日</button>
+                        <button class="filter-btn" data-period="week">1週間</button>
+                        <button class="filter-btn" data-period="month">1ヶ月</button>
+                        <button class="filter-btn" data-period="year">1年間</button>
+                    </div>
+                </div>
+
+                <!-- グラフ切替タブ -->
+                <div class="chart-tabs">
+                    <button class="chart-tab active" data-chart="bar">📊 集中度</button>
+                    <button class="chart-tab" data-chart="pie">🥧 セクション別</button>
+                </div>
+
+                <!-- 棒グラフ -->
+                <div class="chart-container" id="barChartContainer">
+                    <canvas id="focusChart"></canvas>
+                </div>
+
+                <!-- 円グラフ -->
+                <div class="chart-container" id="pieChartContainer" style="display: none;">
+                    <canvas id="sectionPieChart"></canvas>
+                </div>
+
+                <div class="chart-legend" id="barChartLegend">
+                    <span class="legend-item focused">🔵 集中できた</span>
+                    <span class="legend-item normal">⚪ 普通</span>
+                    <span class="legend-item distracted">🔴 捗らなかった</span>
+                </div>
+
+                <div class="chart-legend" id="pieChartLegend" style="display: none;">
+                    <!-- 動的に生成 -->
+                </div>
+
+                <!-- データエクスポート -->
+                <div class="export-buttons">
+                    <button class="btn btn-sm btn-secondary" id="exportCSV">📄 CSVダウンロード</button>
+                    <button class="btn btn-sm btn-secondary" id="exportJSON">📋 JSONダウンロード</button>
+                </div>
+            </div>
+        </main>
+
+        <!-- フッター -->
+        <footer class="footer">
+            <p>💡 2.5時間ごとに休憩を促します</p>
+            <p class="pwa-hint" id="pwaHint" style="display: none;">
+                📲 ホーム画面に追加してオフラインで使用
+            </p>
+            <button class="btn btn-sm btn-tertiary" id="showQrBtn" style="margin-top: 10px;">
+                📱 スマホでプレビュー
+            </button>
+        </footer>
+
+        <!-- 設定モーダル -->
+        <div class="modal" id="settingsModal">
+            <div class="modal-content settings-modal">
+                <div class="modal-header">
+                    <h2 class="modal-title">⚙️ 設定</h2>
+                    <button class="modal-close" id="closeSettingsModal">✕</button>
+                </div>
+
+                <!-- ログイン・アカウント -->
+                <div class="settings-section">
+                    <h3 class="settings-section-title">👤 アカウント</h3>
+
+                    <!-- ゲストモード表示 -->
+                    <div class="auth-guest" id="authGuest">
+                        <p class="auth-status">ゲストモードで使用中</p>
+                        <p class="auth-hint">ログインすると、データをクラウドに保存して他のデバイスと同期できます</p>
+                        <button class="btn btn-primary btn-full" id="showLoginBtn">
+                            🔐 ログイン / 新規登録
+                        </button>
+                    </div>
+
+                    <!-- ログイン済み表示 -->
+                    <div class="auth-logged-in" id="authLoggedIn" style="display: none;">
+                        <p class="auth-status">
+                            <span class="user-email" id="userEmail"></span>
+                            <span class="sync-status" id="syncStatus">同期中...</span>
+                        </p>
+                        <button class="btn btn-secondary btn-full" id="logoutBtn">
+                            ログアウト
+                        </button>
+                    </div>
+
+                    <!-- Firebase未設定の注意 -->
+                    <div class="auth-unavailable" id="authUnavailable" style="display: none;">
+                        <p class="auth-hint">⚠️ クラウド同期は現在利用できません（Firebase未設定）</p>
+                    </div>
+                </div>
+
+                <!-- カラーモード -->
+                <div class="settings-section">
+                    <h3 class="settings-section-title">🎨 カラーモード</h3>
+                    <div class="theme-switch">
+                        <button class="theme-btn active" data-theme="light">
+                            ☀️ シンプル
+                        </button>
+                        <button class="theme-btn" data-theme="dark">
+                            🌙 ブラック
+                        </button>
+                    </div>
+                </div>
+
+                <!-- セクション管理 -->
+                <div class="settings-section">
+                    <h3 class="settings-section-title">📚 学習セクション管理</h3>
+                    <p class="settings-hint">最大20個まで登録できます</p>
+
+                    <div class="section-add">
+                        <input type="text" id="newSectionInput" placeholder="新しいセクション名" maxlength="20">
+                        <button class="btn btn-primary btn-sm" id="addSectionBtn">追加</button>
+                    </div>
+
+                    <ul class="section-list" id="sectionList">
+                        <!-- 動的に生成 -->
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- ログインモーダル -->
+        <div class="modal" id="loginModal">
+            <div class="modal-content login-modal">
+                <div class="modal-header">
+                    <h2 class="modal-title" id="loginModalTitle">🔐 ログイン</h2>
+                    <button class="modal-close" id="closeLoginModal">✕</button>
+                </div>
+
+                <!-- ログインフォーム -->
+                <form id="loginForm" class="auth-form">
+                    <div class="form-group">
+                        <label for="emailInput">メールアドレス</label>
+                        <input type="email" id="emailInput" required placeholder="example@mail.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="passwordInput">パスワード</label>
+                        <input type="password" id="passwordInput" required placeholder="6文字以上" minlength="6">
+                    </div>
+                    <div class="form-error" id="formError"></div>
+                    <button type="submit" class="btn btn-primary btn-full" id="submitAuthBtn">
+                        ログイン
+                    </button>
+                </form>
+
+                <div class="auth-divider">
+                    <span>または</span>
+                </div>
+
+                <!-- Googleログイン -->
+                <button class="btn btn-google btn-full" id="googleLoginBtn">
+                    <svg viewBox="0 0 24 24" width="20" height="20">
+                        <path fill="#4285F4"
+                            d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                        <path fill="#34A853"
+                            d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                        <path fill="#FBBC05"
+                            d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                        <path fill="#EA4335"
+                            d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                    </svg>
+                    Googleでログイン
+                </button>
+
+                <!-- 切替リンク -->
+                <p class="auth-switch">
+                    <span id="switchToSignUp">アカウントをお持ちでない方は<a href="#">新規登録</a></span>
+                    <span id="switchToLogin" style="display: none;">アカウントをお持ちの方は<a href="#">ログイン</a></span>
+                </p>
+            </div>
+        </div>
+
+        <!-- 集中度選択モーダル -->
+        <div class="modal" id="focusModal">
+            <div class="modal-content">
+                <h2 class="modal-title">🎯 セッション完了！</h2>
+                <p class="modal-subtitle">集中度を記録してください</p>
+                <div class="focus-options">
+                    <button class="focus-btn focused" data-focus="focused">
+                        <span class="focus-icon">🔵</span>
+                        <span>集中できた</span>
+                    </button>
+                    <button class="focus-btn normal" data-focus="normal">
+                        <span class="focus-icon">⚪</span>
+                        <span>普通</span>
+                    </button>
+                    <button class="focus-btn distracted" data-focus="distracted">
+                        <span class="focus-icon">🔴</span>
+                        <span>捗らなかった</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 休憩促しモーダル -->
+        <div class="modal" id="breakReminderModal">
+            <div class="modal-content break-reminder">
+                <h2 class="modal-title">☕ 休憩しませんか！</h2>
+                <p class="modal-subtitle">2時間30分連続で作業しました。<br>少し休憩を取りましょう！</p>
+                <div class="break-reminder-actions">
+                    <button class="btn btn-primary" id="takeBreakBtn">
+                        <span>休憩する</span>
+                    </button>
+                    <button class="btn btn-secondary" id="continueWorkBtn">
+                        <span>もう少し続ける</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- QRコードモーダル -->
+        <div class="modal" id="qrModal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title">📱 スマホで確認</h2>
+                    <button class="modal-close" id="closeQrModal">✕</button>
+                </div>
+                <div class="qr-container" style="text-align: center; padding: 20px;">
+                    <img id="qrImage" src="" alt="QR Code" style="max-width: 200px; height: auto;">
+                    <p style="margin-top: 10px; font-size: 0.9em; color: var(--text-muted);">
+                        このQRコードをスマホで読み取ると、<br>実機で動作確認できます
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="firebase-config.js"></script>
+    <script src="auth.js"></script>
+    <script src="sync.js"></script>
+    <script src="app.js"></script>
+
+    <!-- ServiceWorker登録 -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then((registration) => {
+                        console.log('[App] ServiceWorker registered:', registration.scope);
+                    })
+                    .catch((error) => {
+                        console.log('[App] ServiceWorker registration failed:', error);
+                    });
+            });
+        }
+
+        // PWAインストール促しヒント表示
+        let deferredPrompt;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            document.getElementById('pwaHint').style.display = 'block';
+        });
+    </script>
+</body>
+
+</html>
